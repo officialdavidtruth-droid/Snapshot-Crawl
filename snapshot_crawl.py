@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 from lead_finder import open_lead_finder
 
 APP_NAME = "Snapshot Crawl"
-VERSION = "4.0.2"
+VERSION = "4.0.3"
 GITHUB_REPO = "officialdavidtruth-droid/Snapshot-Crawl"
 
 def configure_bundled_browser():

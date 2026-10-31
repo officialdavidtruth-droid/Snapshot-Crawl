@@ -1,8 +1,8 @@
-SNAPSHOT CRAWL V4.2 - BUSINESS LEAD FINDER RELIABILITY UPDATE
+SNAPSHOT CRAWL V4.3 - BUSINESS LEAD FINDER RELIABILITY UPDATE
 
 Application version: 4.0.2
-Installer: Snapshot-Crawl-V4.2-Setup.exe
-Workflow artifact: Snapshot-Crawl-Windows-V4.2
+Installer: Snapshot-Crawl-V4.3-Setup.exe
+Workflow artifact: Snapshot-Crawl-Windows-V4.3
 
 Lead Finder improvements:
 - Three Overpass public-data endpoints with retries and clearer failure messages.

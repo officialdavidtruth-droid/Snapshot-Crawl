@@ -1,0 +1,15 @@
+SNAPSHOT CRAWL V4.3 — BUSINESS LEAD FINDER RELIABILITY FIX
+
+Changes:
+- Added another independent public Overpass mirror.
+- Each mirror is tried using standard form POST, alternate POST encoding, and GET fallback.
+- Added clearer handling for permanent HTTP errors and temporary service failures.
+- Increased the Overpass query timeout and added interruptible retry pauses.
+- Search still uses public OpenStreetMap listings and publicly accessible business websites.
+- Existing contact qualification and CSV export rules are unchanged.
+- GitHub Actions now also builds an artifact when code is pushed to main/master; tagged releases still publish the installer for the in-app updater.
+
+Limitations:
+- Public Overpass mirrors are community services and can be unavailable, rate-limited, or incomplete.
+- This patch improves resilience but cannot guarantee every search will succeed or discover every business.
+- This ZIP has passed Python syntax checks only. A Windows installer build and live Abuja/Nigeria search test still need to be run.

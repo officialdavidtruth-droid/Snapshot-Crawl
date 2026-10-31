@@ -20,7 +20,9 @@ from bs4 import BeautifulSoup
 
 APP_UA = "SnapshotCrawl/4.0.2 (public business contact discovery)"
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
+# Public Overpass instances. They may throttle or temporarily become unavailable.
 OVERPASS_ENDPOINTS = (
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.nchc.org.tw/api/interpreter",
@@ -228,9 +230,10 @@ class LeadFinder(tk.Toplevel):
         return float(item["lat"]), float(item["lon"]), item.get("display_name", place)
 
     def query_overpass(self, lat, lon):
+        """Try independent Overpass mirrors and several compatible request formats."""
         radius = 25000
         query = (
-            f"[out:json][timeout:35];("
+            f"[out:json][timeout:50];("
             f"nwr(around:{radius},{lat},{lon})[name][shop];"
             f"nwr(around:{radius},{lat},{lon})[name][amenity];"
             f"nwr(around:{radius},{lat},{lon})[name][office];"
@@ -239,26 +242,43 @@ class LeadFinder(tk.Toplevel):
             f"nwr(around:{radius},{lat},{lon})[name][healthcare];"
             f");out center tags;"
         )
+        headers = {"User-Agent": APP_UA, "Accept": "application/json"}
         errors = []
-        for endpoint in OVERPASS_ENDPOINTS:
+        for endpoint_index, endpoint in enumerate(OVERPASS_ENDPOINTS, 1):
             if self.stop_event.is_set():
                 return []
-            try:
-                self.post(("status", f"Searching public business listings ({OVERPASS_ENDPOINTS.index(endpoint)+1}/{len(OVERPASS_ENDPOINTS)})…"))
-                response = requests.post(
-                    endpoint, data={"data": query},
-                    headers={"User-Agent": APP_UA},
-                    timeout=(12, 55),
-                )
-                response.raise_for_status()
-                payload = response.json()
-                if "elements" not in payload:
-                    raise RuntimeError("The listing service returned an unexpected response.")
-                return payload["elements"]
-            except Exception as exc:
-                errors.append(f"{endpoint}: {exc}")
-                time.sleep(1)
-        raise RuntimeError("All public business listing services failed. Try again later. Details: " + " | ".join(errors))
+            self.post(("status", f"Searching public business listings (source {endpoint_index}/{len(OVERPASS_ENDPOINTS)})…"))
+            attempts = (
+                ("POST", {"data": {"data": query}, "headers": headers}),
+                ("POST", {"data": query, "headers": {**headers, "Content-Type": "application/x-www-form-urlencoded"}}),
+                ("GET", {"params": {"data": query}, "headers": headers}),
+            )
+            for method, kwargs in attempts:
+                if self.stop_event.is_set():
+                    return []
+                try:
+                    response = requests.request(
+                        method, endpoint, timeout=(15, 90),
+                        allow_redirects=True, **kwargs
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
+                        raise RuntimeError("The listing service returned an invalid JSON response.")
+                    return payload["elements"]
+                except Exception as exc:
+                    code = getattr(getattr(exc, "response", None), "status_code", None)
+                    errors.append(f"{endpoint} [{method}{' HTTP '+str(code) if code else ''}]: {exc}")
+                    if code in (400, 401, 403, 404, 406, 410):
+                        break
+                    if self.stop_event.wait(1.0):
+                        return []
+        detail = " | ".join(errors[-10:])
+        raise RuntimeError(
+            "All public OpenStreetMap search servers were unavailable or rejected "
+            "the request. This can be temporary. Check your internet connection "
+            "and try again in a few minutes. Details: " + detail
+        )
 
     def matches_niche(self, tags, niche):
         words = [w.lower() for w in re.findall(r"[a-z0-9]+", niche) if len(w) > 2]
