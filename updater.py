@@ -33,6 +33,14 @@ def check_for_updates(root, current_version, repo):
             if not installer:
                 raise RuntimeError("A newer release exists, but its Windows installer has not been published yet.")
             root.after(0, lambda: offer_update(tag, installer))
+        except requests.HTTPError as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code == 404:
+                message = ("No public GitHub Release has been published yet. "
+                           "The update checker will work after the first versioned release is published.")
+            else:
+                message = "Could not check for updates: " + str(exc)
+            root.after(0, lambda m=message: finish(m, None))
         except Exception as exc:
             root.after(0, lambda e=str(exc): finish("Could not check for updates: " + e, None))
     def finish(message, _):

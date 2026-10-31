@@ -71,13 +71,28 @@ class SnapshotCrawlApp:
         tk.Label(brand, text="◈", fg=self.colors["orange"], bg=self.colors["nav"], font=("Segoe UI", 25, "bold")).pack(anchor="w")
         tk.Label(brand, text="SNAPSHOT CRAWL", fg="white", bg=self.colors["nav"], font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(5, 0))
         tk.Label(brand, text=f"DESKTOP  •  V{VERSION}", fg="#9EABC0", bg=self.colors["nav"], font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
-        for label, glyph in [("Dashboard", "⌂"), ("Website Explorer", "◎"), ("Business Lead Finder", "▦")]:
-            tk.Label(sidebar, text=f"  {glyph}    {label}", anchor="w", padx=18, pady=13, fg="#E7ECF4", bg=self.colors["nav"], font=("Segoe UI", 10)).pack(fill="x", padx=10, pady=2)
+        nav_items = [
+            ("Dashboard", "⌂", self.show_dashboard),
+            ("Website Explorer", "◎", self.show_explorer),
+            ("Business Lead Finder", "▦", self.show_lead_finder),
+        ]
+        for label, glyph, action in nav_items:
+            tk.Button(sidebar, text=f"  {glyph}    {label}", anchor="w",
+                      padx=18, pady=13, relief="flat", bd=0,
+                      fg="#E7ECF4", bg=self.colors["nav"],
+                      activebackground="#263650", activeforeground="white",
+                      font=("Segoe UI", 10), cursor="hand2",
+                      command=action).pack(fill="x", padx=10, pady=2)
         tk.Frame(sidebar, bg="#2B3850", height=1).pack(fill="x", padx=18, pady=18)
-        tk.Button(sidebar, text="⚙   Settings & Updates", anchor="w", padx=18, pady=12, relief="flat", bd=0, fg="#E7ECF4", bg=self.colors["nav"], activebackground="#263650", activeforeground="white", font=("Segoe UI", 9), command=self.check_updates).pack(fill="x", padx=10)
+        tk.Button(sidebar, text="⚙   Settings & Updates", anchor="w",
+                  padx=18, pady=12, relief="flat", bd=0, fg="#E7ECF4",
+                  bg=self.colors["nav"], activebackground="#263650",
+                  activeforeground="white", font=("Segoe UI", 9),
+                  cursor="hand2", command=self.show_settings).pack(fill="x", padx=10)
         tk.Label(sidebar, text="Public data only.\nRespect website terms and privacy.", justify="left", fg="#9EABC0", bg=self.colors["nav"], font=("Segoe UI", 8)).pack(side="bottom", anchor="w", padx=20, pady=22)
 
         content = tk.Frame(shell, bg=self.colors["bg"]); content.pack(side="left", fill="both", expand=True, padx=28, pady=24)
+        self.content = content
         top = tk.Frame(content, bg=self.colors["bg"]); top.pack(fill="x", pady=(0, 20))
         tk.Label(top, text="Website Explorer", bg=self.colors["bg"], fg=self.colors["text"], font=("Segoe UI", 23, "bold")).pack(anchor="w")
         tk.Label(top, text="Capture, inspect and document website experiences across devices.", bg=self.colors["bg"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w", pady=(4, 0))
@@ -119,11 +134,71 @@ class SnapshotCrawlApp:
         self.log = tk.Text(sp, height=8, wrap="word", state="disabled", font=("Cascadia Code", 9), bg="#F8FAFD", fg="#34435A", relief="flat", padx=12, pady=10)
         self.log.pack(fill="both", expand=True)
         controls = tk.Frame(content, bg=self.colors["bg"]); controls.pack(fill="x", pady=(14, 0))
-        ttk.Button(controls, text="Business Lead Finder", style="Secondary.TButton", command=lambda: open_lead_finder(root)).pack(side="left")
+        ttk.Button(controls, text="Open output folder", style="Secondary.TButton", command=self.open_output_folder).pack(side="left")
         self.start_btn = ttk.Button(controls, text="Start website scan  →", style="Accent.TButton", command=self.start); self.start_btn.pack(side="right")
         self.continue_btn = ttk.Button(controls, text="Continue after sign-in", style="Secondary.TButton", command=self.continue_login, state="disabled"); self.continue_btn.pack(side="right", padx=8)
         self.stop_btn = ttk.Button(controls, text="Stop scan", style="Secondary.TButton", command=self.stop, state="disabled"); self.stop_btn.pack(side="right", padx=8)
         root.after(150, self.poll_events)
+
+
+    def show_explorer(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.status_var.set("Website Explorer ready")
+
+    def show_lead_finder(self):
+        try:
+            open_lead_finder(self.root)
+        except Exception as exc:
+            messagebox.showerror("Business Lead Finder", f"Could not open Business Lead Finder:\\n{exc}")
+
+    def show_dashboard(self):
+        win = tk.Toplevel(self.root)
+        win.title("Snapshot Crawl Dashboard")
+        win.geometry("620x400")
+        win.configure(bg=self.colors["bg"])
+        tk.Label(win, text="Welcome to Snapshot Crawl", bg=self.colors["bg"],
+                 fg=self.colors["text"], font=("Segoe UI", 21, "bold")).pack(anchor="w", padx=28, pady=(28, 6))
+        tk.Label(win, text="Your website exploration and business research workspace.",
+                 bg=self.colors["bg"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=28)
+        for title, detail, action in [
+            ("Website Explorer", "Crawl pages and capture desktop, tablet and mobile screenshots.", self.show_explorer),
+            ("Business Lead Finder", "Find businesses with publicly listed contact information.", self.show_lead_finder),
+        ]:
+            card = tk.Frame(win, bg="white", highlightbackground=self.colors["line"], highlightthickness=1)
+            card.pack(fill="x", padx=24, pady=9)
+            tk.Label(card, text=title, bg="white", fg=self.colors["text"], font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(12, 3))
+            tk.Label(card, text=detail, bg="white", fg=self.colors["muted"], font=("Segoe UI", 9), wraplength=520, justify="left").pack(anchor="w", padx=16)
+            tk.Button(card, text="Open", command=lambda w=win, fn=action: (w.destroy(), fn()),
+                      bg=self.colors["orange"], fg=self.colors["text"], relief="flat",
+                      padx=16, pady=7, cursor="hand2").pack(anchor="e", padx=16, pady=12)
+
+    def show_settings(self):
+        win = tk.Toplevel(self.root)
+        win.title("Settings & Updates")
+        win.geometry("500x260")
+        win.resizable(False, False)
+        win.configure(bg=self.colors["bg"])
+        tk.Label(win, text="Settings & Updates", bg=self.colors["bg"],
+                 fg=self.colors["text"], font=("Segoe UI", 20, "bold")).pack(anchor="w", padx=24, pady=(24, 8))
+        tk.Label(win, text=f"Snapshot Crawl version {VERSION}", bg=self.colors["bg"],
+                 fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=24)
+        tk.Label(win, text="Check the official GitHub Releases page for a newer version.",
+                 bg=self.colors["bg"], fg=self.colors["text"], font=("Segoe UI", 10),
+                 wraplength=440, justify="left").pack(anchor="w", padx=24, pady=20)
+        tk.Button(win, text="Check for updates", command=self.check_updates,
+                  bg=self.colors["orange"], fg=self.colors["text"], relief="flat",
+                  padx=18, pady=9, cursor="hand2").pack(anchor="w", padx=24)
+        tk.Button(win, text="Close", command=win.destroy, relief="flat",
+                  padx=18, pady=7).pack(anchor="w", padx=24, pady=12)
+
+    def open_output_folder(self):
+        folder = Path(self.output_var.get()).expanduser()
+        folder.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(str(folder))
+        else:
+            messagebox.showinfo("Output folder", str(folder))
 
     def check_updates(self):
         from updater import check_for_updates

@@ -41,14 +41,14 @@ jobs:
       - name: Generate installer checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash "installer-output\Snapshot-Crawl-V4-Setup.exe" -Algorithm SHA256).Hash.ToLower()
-          "sha256:$hash  Snapshot-Crawl-V4-Setup.exe" | Out-File -Encoding ascii "installer-output\SHA256SUMS.txt"
+          $hash = (Get-FileHash "installer-output\Snapshot-Crawl-V4.1-Setup.exe" -Algorithm SHA256).Hash.ToLower()
+          "sha256:$hash  Snapshot-Crawl-V4.1-Setup.exe" | Out-File -Encoding ascii "installer-output\SHA256SUMS.txt"
       - name: Upload V4 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Snapshot-Crawl-Windows-V4
+          name: Snapshot-Crawl-Windows-V4.1
           path: |
-            installer-output/Snapshot-Crawl-V4-Setup.exe
+            installer-output/Snapshot-Crawl-V4.1-Setup.exe
             installer-output/SHA256SUMS.txt
           if-no-files-found: error
       - name: Publish GitHub Release for in-app updater
@@ -56,6 +56,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            installer-output/Snapshot-Crawl-V4-Setup.exe
+            installer-output/Snapshot-Crawl-V4.1-Setup.exe
             installer-output/SHA256SUMS.txt
           generate_release_notes: true
