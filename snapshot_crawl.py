@@ -18,7 +18,8 @@ from playwright.async_api import async_playwright
 from lead_finder import open_lead_finder
 
 APP_NAME = "Snapshot Crawl"
-VERSION = "3.0.0"
+VERSION = "4.0.0"
+GITHUB_REPO = "officialdavidtruth-droid/Snapshot-Crawl"
 
 def configure_bundled_browser():
     """Use the Chromium browser shipped beside the Windows application."""
@@ -43,78 +44,90 @@ class SnapshotCrawlApp:
     def __init__(self, root):
         self.root = root
         root.title(f"{APP_NAME} {VERSION}")
-        root.geometry("900x720")
-        root.minsize(760, 620)
+        root.geometry("1120x780")
+        root.minsize(980, 680)
+        root.configure(bg="#F3F5F9")
         self.events = queue.Queue()
         self.stop_event = threading.Event()
         self.login_continue = threading.Event()
         self.worker = None
-
+        self.colors = {"nav":"#111C32", "orange":"#F28C28", "bg":"#F3F5F9", "card":"#FFFFFF", "text":"#17243A", "muted":"#718096", "line":"#E4E9F1", "green":"#16845B"}
         style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
+        try: style.theme_use("clam")
+        except Exception: pass
+        style.configure("TLabel", background=self.colors["card"], foreground=self.colors["text"], font=("Segoe UI", 10))
+        style.configure("Muted.TLabel", background=self.colors["card"], foreground=self.colors["muted"], font=("Segoe UI", 9))
+        style.configure("TEntry", padding=8, font=("Segoe UI", 10))
+        style.configure("TSpinbox", padding=6, font=("Segoe UI", 10))
+        style.configure("TCheckbutton", background=self.colors["card"], foreground=self.colors["text"], font=("Segoe UI", 9))
+        style.configure("Accent.TButton", background=self.colors["orange"], foreground="#17243A", padding=(16, 10), font=("Segoe UI", 10, "bold"), borderwidth=0)
+        style.map("Accent.TButton", background=[("active", "#FFAA4D"), ("disabled", "#D5D9E0")])
+        style.configure("Secondary.TButton", background="#E9EEF5", foreground=self.colors["text"], padding=(12, 9), font=("Segoe UI", 9, "bold"), borderwidth=0)
+        style.configure("Horizontal.TProgressbar", troughcolor="#E8EDF4", background=self.colors["orange"], thickness=10)
 
-        main = ttk.Frame(root, padding=20)
-        main.pack(fill="both", expand=True)
+        shell = tk.Frame(root, bg=self.colors["bg"]); shell.pack(fill="both", expand=True)
+        sidebar = tk.Frame(shell, bg=self.colors["nav"], width=220); sidebar.pack(side="left", fill="y"); sidebar.pack_propagate(False)
+        brand = tk.Frame(sidebar, bg=self.colors["nav"]); brand.pack(fill="x", padx=20, pady=(26, 30))
+        tk.Label(brand, text="◈", fg=self.colors["orange"], bg=self.colors["nav"], font=("Segoe UI", 25, "bold")).pack(anchor="w")
+        tk.Label(brand, text="SNAPSHOT CRAWL", fg="white", bg=self.colors["nav"], font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(5, 0))
+        tk.Label(brand, text=f"DESKTOP  •  V{VERSION}", fg="#9EABC0", bg=self.colors["nav"], font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
+        for label, glyph in [("Dashboard", "⌂"), ("Website Explorer", "◎"), ("Business Lead Finder", "▦")]:
+            tk.Label(sidebar, text=f"  {glyph}    {label}", anchor="w", padx=18, pady=13, fg="#E7ECF4", bg=self.colors["nav"], font=("Segoe UI", 10)).pack(fill="x", padx=10, pady=2)
+        tk.Frame(sidebar, bg="#2B3850", height=1).pack(fill="x", padx=18, pady=18)
+        tk.Button(sidebar, text="⚙   Settings & Updates", anchor="w", padx=18, pady=12, relief="flat", bd=0, fg="#E7ECF4", bg=self.colors["nav"], activebackground="#263650", activeforeground="white", font=("Segoe UI", 9), command=self.check_updates).pack(fill="x", padx=10)
+        tk.Label(sidebar, text="Public data only.\nRespect website terms and privacy.", justify="left", fg="#9EABC0", bg=self.colors["nav"], font=("Segoe UI", 8)).pack(side="bottom", anchor="w", padx=20, pady=22)
 
-        header = ttk.Frame(main)
-        header.pack(fill="x")
-        ttk.Label(header, text="SNAPSHOT CRAWL", font=("Segoe UI", 22, "bold")).pack(anchor="w")
-        ttk.Label(header, text=f"Website capture & exploration  |  Version {VERSION}",
-                  foreground="#666").pack(anchor="w", pady=(2, 16))
+        content = tk.Frame(shell, bg=self.colors["bg"]); content.pack(side="left", fill="both", expand=True, padx=28, pady=24)
+        top = tk.Frame(content, bg=self.colors["bg"]); top.pack(fill="x", pady=(0, 20))
+        tk.Label(top, text="Website Explorer", bg=self.colors["bg"], fg=self.colors["text"], font=("Segoe UI", 23, "bold")).pack(anchor="w")
+        tk.Label(top, text="Capture, inspect and document website experiences across devices.", bg=self.colors["bg"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w", pady=(4, 0))
 
-        ttk.Label(main, text="Website address").pack(anchor="w")
+        card = tk.Frame(content, bg=self.colors["card"], highlightbackground=self.colors["line"], highlightthickness=1); card.pack(fill="x", pady=(0, 14))
+        inner = tk.Frame(card, bg=self.colors["card"]); inner.pack(fill="x", padx=20, pady=18)
+        tk.Label(inner, text="WEBSITE ADDRESS", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         self.url_var = tk.StringVar(value="https://example.com")
-        ttk.Entry(main, textvariable=self.url_var, font=("Segoe UI", 11)).pack(fill="x", pady=(5, 13))
-
-        line = ttk.Frame(main); line.pack(fill="x")
-        ttk.Label(line, text="Page limit").pack(side="left")
+        ttk.Entry(inner, textvariable=self.url_var, font=("Segoe UI", 11)).pack(fill="x", pady=(7, 14))
+        row = tk.Frame(inner, bg=self.colors["card"]); row.pack(fill="x")
+        tk.Label(row, text="PAGE LIMIT", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 8, "bold")).pack(side="left")
         self.limit_var = tk.StringVar(value="100")
-        ttk.Spinbox(line, from_=1, to=5000, textvariable=self.limit_var, width=8).pack(side="left", padx=(7, 18))
-        ttk.Label(line, text="Save results to").pack(side="left")
+        ttk.Spinbox(row, from_=1, to=5000, textvariable=self.limit_var, width=8).pack(side="left", padx=(8, 20))
+        tk.Label(row, text="SAVE RESULTS TO", bg=self.colors["card"], fg=self.colors["muted"], font=("Segoe UI", 8, "bold")).pack(side="left")
         self.output_var = tk.StringVar(value=str(Path.home() / "Snapshot Crawl"))
-        ttk.Entry(line, textvariable=self.output_var).pack(side="left", fill="x", expand=True, padx=7)
-        ttk.Button(line, text="Browse", command=self.browse).pack(side="left")
+        ttk.Entry(row, textvariable=self.output_var).pack(side="left", fill="x", expand=True, padx=8)
+        ttk.Button(row, text="Browse", style="Secondary.TButton", command=self.browse).pack(side="left")
 
-        options = ttk.LabelFrame(main, text="Capture settings", padding=12)
-        options.pack(fill="x", pady=14)
-        self.desktop_var = tk.BooleanVar(value=True)
-        self.tablet_var = tk.BooleanVar(value=True)
-        self.mobile_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options, text="Desktop · 1440 × 900", variable=self.desktop_var).grid(row=0, column=0, sticky="w", padx=5, pady=3)
-        ttk.Checkbutton(options, text="Tablet · 820 × 1180", variable=self.tablet_var).grid(row=0, column=1, sticky="w", padx=5, pady=3)
-        ttk.Checkbutton(options, text="Mobile · 390 × 844", variable=self.mobile_var).grid(row=0, column=2, sticky="w", padx=5, pady=3)
-        self.same_domain_var = tk.BooleanVar(value=True)
-        self.login_var = tk.BooleanVar(value=False)
-        self.interactive_var = tk.BooleanVar(value=True)
-        self.scroll_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options, text="Stay on the same website/domain", variable=self.same_domain_var).grid(row=1, column=0, columnspan=2, sticky="w", padx=5, pady=3)
-        ttk.Checkbutton(options, text="Open a browser so I can sign in manually", variable=self.login_var).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=3)
-        ttk.Checkbutton(options, text="Explore safe tabs, accordions and menu toggles", variable=self.interactive_var).grid(row=3, column=0, columnspan=3, sticky="w", padx=5, pady=3)
-        ttk.Checkbutton(options, text="Scroll pages to trigger lazy-loaded content", variable=self.scroll_var).grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=3)
+        opts = tk.Frame(content, bg=self.colors["card"], highlightbackground=self.colors["line"], highlightthickness=1); opts.pack(fill="x", pady=(0, 14))
+        op = tk.Frame(opts, bg=self.colors["card"]); op.pack(fill="x", padx=20, pady=16)
+        tk.Label(op, text="CAPTURE SETTINGS", bg=self.colors["card"], fg=self.colors["text"], font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w", columnspan=3, pady=(0, 10))
+        self.desktop_var = tk.BooleanVar(value=True); self.tablet_var = tk.BooleanVar(value=True); self.mobile_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(op, text="Desktop  ·  1440 × 900", variable=self.desktop_var).grid(row=1, column=0, sticky="w", padx=(0, 20), pady=4)
+        ttk.Checkbutton(op, text="Tablet  ·  820 × 1180", variable=self.tablet_var).grid(row=1, column=1, sticky="w", padx=(0, 20), pady=4)
+        ttk.Checkbutton(op, text="Mobile  ·  390 × 844", variable=self.mobile_var).grid(row=1, column=2, sticky="w", pady=4)
+        self.same_domain_var = tk.BooleanVar(value=True); self.login_var = tk.BooleanVar(value=False); self.interactive_var = tk.BooleanVar(value=True); self.scroll_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(op, text="Stay on the same website/domain", variable=self.same_domain_var).grid(row=2, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Checkbutton(op, text="Open browser for manual sign-in", variable=self.login_var).grid(row=2, column=2, sticky="w", pady=4)
+        ttk.Checkbutton(op, text="Explore safe tabs, accordions and menu toggles", variable=self.interactive_var).grid(row=3, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Checkbutton(op, text="Scroll pages to load lazy content", variable=self.scroll_var).grid(row=3, column=2, sticky="w", pady=4)
 
-        ttk.Label(main, text="Progress").pack(anchor="w")
-        self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(main, textvariable=self.status_var).pack(anchor="w", pady=(3, 5))
-        self.progress = ttk.Progressbar(main, mode="determinate")
-        self.progress.pack(fill="x")
-
-        self.log = tk.Text(main, height=14, wrap="word", state="disabled", font=("Consolas", 9))
-        self.log.pack(fill="both", expand=True, pady=12)
-
-        controls = ttk.Frame(main); controls.pack(fill="x")
-        ttk.Button(controls, text="Business Lead Finder", command=lambda: open_lead_finder(root)).pack(side="left", padx=(0, 8))
-        self.start_btn = ttk.Button(controls, text="Start website scan", command=self.start)
-        self.start_btn.pack(side="left")
-        self.continue_btn = ttk.Button(controls, text="Continue after sign-in", command=self.continue_login, state="disabled")
-        self.continue_btn.pack(side="left", padx=8)
-        self.stop_btn = ttk.Button(controls, text="Stop scan", command=self.stop, state="disabled")
-        self.stop_btn.pack(side="left")
-        ttk.Label(main, text="Safety: Snapshot Crawl does not bypass logins or security controls. It avoids obvious destructive and payment actions. Use only on websites you own or have permission to test.",
-                  foreground="#555", wraplength=850).pack(anchor="w", pady=(12, 0))
+        status_card = tk.Frame(content, bg=self.colors["card"], highlightbackground=self.colors["line"], highlightthickness=1); status_card.pack(fill="both", expand=True)
+        sp = tk.Frame(status_card, bg=self.colors["card"]); sp.pack(fill="both", expand=True, padx=20, pady=16)
+        sr = tk.Frame(sp, bg=self.colors["card"]); sr.pack(fill="x")
+        tk.Label(sr, text="SCAN ACTIVITY", bg=self.colors["card"], fg=self.colors["text"], font=("Segoe UI", 10, "bold")).pack(side="left")
+        self.status_var = tk.StringVar(value="Ready to scan")
+        ttk.Label(sr, textvariable=self.status_var, style="Muted.TLabel").pack(side="right")
+        self.progress = ttk.Progressbar(sp, mode="determinate"); self.progress.pack(fill="x", pady=(12, 10))
+        self.log = tk.Text(sp, height=8, wrap="word", state="disabled", font=("Cascadia Code", 9), bg="#F8FAFD", fg="#34435A", relief="flat", padx=12, pady=10)
+        self.log.pack(fill="both", expand=True)
+        controls = tk.Frame(content, bg=self.colors["bg"]); controls.pack(fill="x", pady=(14, 0))
+        ttk.Button(controls, text="Business Lead Finder", style="Secondary.TButton", command=lambda: open_lead_finder(root)).pack(side="left")
+        self.start_btn = ttk.Button(controls, text="Start website scan  →", style="Accent.TButton", command=self.start); self.start_btn.pack(side="right")
+        self.continue_btn = ttk.Button(controls, text="Continue after sign-in", style="Secondary.TButton", command=self.continue_login, state="disabled"); self.continue_btn.pack(side="right", padx=8)
+        self.stop_btn = ttk.Button(controls, text="Stop scan", style="Secondary.TButton", command=self.stop, state="disabled"); self.stop_btn.pack(side="right", padx=8)
         root.after(150, self.poll_events)
+
+    def check_updates(self):
+        from updater import check_for_updates
+        check_for_updates(self.root, VERSION, GITHUB_REPO)
 
     def browse(self):
         folder = filedialog.askdirectory()
