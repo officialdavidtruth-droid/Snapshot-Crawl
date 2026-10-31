@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from playwright.async_api import async_playwright
+from lead_finder import open_lead_finder
 
 APP_NAME = "Snapshot Crawl"
 VERSION = "3.0.0"
@@ -104,6 +105,7 @@ class SnapshotCrawlApp:
         self.log.pack(fill="both", expand=True, pady=12)
 
         controls = ttk.Frame(main); controls.pack(fill="x")
+        ttk.Button(controls, text="Business Lead Finder", command=lambda: open_lead_finder(root)).pack(side="left", padx=(0, 8))
         self.start_btn = ttk.Button(controls, text="Start website scan", command=self.start)
         self.start_btn.pack(side="left")
         self.continue_btn = ttk.Button(controls, text="Continue after sign-in", command=self.continue_login, state="disabled")

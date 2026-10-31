@@ -1,62 +1,46 @@
-
-name: Build Snapshot Crawl for Windows
-
+name: Build Snapshot Crawl V4 for Windows
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "v*"
-
+    tags: ["v*"]
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Install Chromium
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\browser"
           python -m playwright install chromium
-
-      - name: Build Snapshot Crawl
+      - name: Build desktop application
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\browser"
-          pyinstaller --noconfirm --clean --windowed --onedir --name "Snapshot Crawl" --collect-all playwright snapshot_crawl.py
-
+          pyinstaller --noconfirm --clean --windowed --onedir --name "Snapshot Crawl" --collect-all playwright --hidden-import lead_finder snapshot_crawl.py
       - name: Copy browser runtime
         shell: pwsh
-        run: |
-          Copy-Item -Recurse -Force "browser" "dist\Snapshot Crawl\browser"
-
+        run: Copy-Item -Recurse -Force "browser" "dist\Snapshot Crawl\browser"
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
-
-      - name: Create Windows installer
+      - name: Compile installer
         shell: pwsh
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           & $compiler "installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
-
-      - name: Upload Windows application
+      - name: Upload V4 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Snapshot-Crawl-Windows-V3
+          name: Snapshot-Crawl-Windows-V4
           path: |
             dist/Snapshot Crawl/**
-            installer-output/Snapshot-Crawl-Setup.exe
+            installer-output/Snapshot-Crawl-V4-Setup.exe
           if-no-files-found: error
