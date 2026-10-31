@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 from lead_finder import open_lead_finder
 
 APP_NAME = "Snapshot Crawl"
-VERSION = "4.0.0"
+VERSION = "4.0.2"
 GITHUB_REPO = "officialdavidtruth-droid/Snapshot-Crawl"
 
 def configure_bundled_browser():
@@ -153,25 +153,78 @@ class SnapshotCrawlApp:
             messagebox.showerror("Business Lead Finder", f"Could not open Business Lead Finder:\\n{exc}")
 
     def show_dashboard(self):
+        """Show a useful overview based on files Snapshot Crawl has actually created."""
         win = tk.Toplevel(self.root)
-        win.title("Snapshot Crawl Dashboard")
-        win.geometry("620x400")
+        win.title("Snapshot Crawl — Dashboard")
+        win.geometry("900x650")
+        win.minsize(760, 560)
         win.configure(bg=self.colors["bg"])
-        tk.Label(win, text="Welcome to Snapshot Crawl", bg=self.colors["bg"],
-                 fg=self.colors["text"], font=("Segoe UI", 21, "bold")).pack(anchor="w", padx=28, pady=(28, 6))
-        tk.Label(win, text="Your website exploration and business research workspace.",
-                 bg=self.colors["bg"], fg=self.colors["muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=28)
-        for title, detail, action in [
-            ("Website Explorer", "Crawl pages and capture desktop, tablet and mobile screenshots.", self.show_explorer),
-            ("Business Lead Finder", "Find businesses with publicly listed contact information.", self.show_lead_finder),
+
+        tk.Label(win, text="Dashboard", bg=self.colors["bg"], fg=self.colors["text"],
+                 font=("Segoe UI", 23, "bold")).pack(anchor="w", padx=28, pady=(24, 3))
+        tk.Label(win, text="An overview of your website captures and saved business leads.",
+                 bg=self.colors["bg"], fg=self.colors["muted"],
+                 font=("Segoe UI", 10)).pack(anchor="w", padx=28, pady=(0, 18))
+
+        output = Path(self.output_var.get()).expanduser()
+        output.mkdir(parents=True, exist_ok=True)
+        crawl_dirs = sorted([p for p in output.glob("Snapshot_Crawl_*") if p.is_dir()],
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+        screenshot_count = 0
+        for folder in crawl_dirs:
+            for device in ("desktop", "tablet", "mobile"):
+                device_dir = folder / device
+                if device_dir.exists():
+                    screenshot_count += sum(1 for f in device_dir.rglob("*") if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"))
+        lead_files = list(output.glob("*.csv"))
+        lead_rows = 0
+        for csv_file in lead_files:
+            try:
+                with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
+                    lead_rows += max(0, sum(1 for _ in f) - 1)
+            except Exception:
+                continue
+
+        metrics = tk.Frame(win, bg=self.colors["bg"])
+        metrics.pack(fill="x", padx=22)
+        for title, value, detail in [
+            ("WEBSITE CRAWLS", str(len(crawl_dirs)), "Saved crawl sessions"),
+            ("SCREENSHOTS", str(screenshot_count), "Captured image files"),
+            ("SAVED LEADS", str(lead_rows), "Rows in exported CSV files"),
         ]:
-            card = tk.Frame(win, bg="white", highlightbackground=self.colors["line"], highlightthickness=1)
-            card.pack(fill="x", padx=24, pady=9)
-            tk.Label(card, text=title, bg="white", fg=self.colors["text"], font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(12, 3))
-            tk.Label(card, text=detail, bg="white", fg=self.colors["muted"], font=("Segoe UI", 9), wraplength=520, justify="left").pack(anchor="w", padx=16)
-            tk.Button(card, text="Open", command=lambda w=win, fn=action: (w.destroy(), fn()),
-                      bg=self.colors["orange"], fg=self.colors["text"], relief="flat",
-                      padx=16, pady=7, cursor="hand2").pack(anchor="e", padx=16, pady=12)
+            card = tk.Frame(metrics, bg="white", highlightbackground=self.colors["line"], highlightthickness=1)
+            card.pack(side="left", fill="both", expand=True, padx=6)
+            tk.Label(card, text=title, bg="white", fg=self.colors["muted"],
+                     font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=14, pady=(13, 4))
+            tk.Label(card, text=value, bg="white", fg=self.colors["text"],
+                     font=("Segoe UI", 25, "bold")).pack(anchor="w", padx=14)
+            tk.Label(card, text=detail, bg="white", fg=self.colors["muted"],
+                     font=("Segoe UI", 8)).pack(anchor="w", padx=14, pady=(0, 13))
+
+        section = tk.Frame(win, bg="white", highlightbackground=self.colors["line"], highlightthickness=1)
+        section.pack(fill="both", expand=True, padx=28, pady=18)
+        tk.Label(section, text="RECENT WEBSITE ACTIVITY", bg="white", fg=self.colors["text"],
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=18, pady=(15, 8))
+        if crawl_dirs:
+            for folder in crawl_dirs[:6]:
+                stamp = datetime.fromtimestamp(folder.stat().st_mtime).strftime("%b %d, %Y  %I:%M %p")
+                tk.Label(section, text=f"  •  {folder.name}     {stamp}", bg="white",
+                         fg=self.colors["text"], font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=5)
+        else:
+            tk.Label(section, text="No website crawls have been saved yet. Start a scan in Website Explorer.",
+                     bg="white", fg=self.colors["muted"], font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=8)
+
+        actions = tk.Frame(win, bg=self.colors["bg"])
+        actions.pack(fill="x", padx=28, pady=(0, 20))
+        tk.Button(actions, text="Open Website Explorer", command=lambda: (win.destroy(), self.show_explorer()),
+                  bg=self.colors["orange"], fg=self.colors["text"], relief="flat",
+                  padx=16, pady=10, cursor="hand2").pack(side="left")
+        tk.Button(actions, text="Find Businesses", command=lambda: (win.destroy(), self.show_lead_finder()),
+                  bg="#E9EEF5", fg=self.colors["text"], relief="flat",
+                  padx=16, pady=10, cursor="hand2").pack(side="left", padx=10)
+        tk.Button(actions, text="Open Results Folder", command=self.open_output_folder,
+                  bg="#E9EEF5", fg=self.colors["text"], relief="flat",
+                  padx=16, pady=10, cursor="hand2").pack(side="right")
 
     def show_settings(self):
         win = tk.Toplevel(self.root)
