@@ -1,5 +1,5 @@
 #define MyAppName "Snapshot Crawl"
-#define MyAppVersion "4.0.3"
+#define MyAppVersion "4.5"
 #define MyAppExeName "Snapshot Crawl.exe"
 [Setup]
 AppId={{8BFBF4B2-4A79-4E2B-A4CB-7ACD9F48BEE2}
@@ -8,7 +8,7 @@ AppVersion={#MyAppVersion}
 DefaultDirName={autopf}\Snapshot Crawl
 DefaultGroupName={#MyAppName}
 OutputDir=installer-output
-OutputBaseFilename=Snapshot-Crawl-V4.3-Setup
+OutputBaseFilename=Snapshot-Crawl-V4.5-Setup
 Compression=lzma2
 SolidCompression=yes
 CloseApplications=yes

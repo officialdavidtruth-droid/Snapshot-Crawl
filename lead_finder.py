@@ -5,6 +5,7 @@ fields, and optionally visits public business websites for published contacts.
 Only rows with at least one phone number or email are retained/exported.
 """
 import csv
+import os
 import re
 import threading
 import time
@@ -18,11 +19,9 @@ from urllib.parse import urlparse, urljoin
 import requests
 from bs4 import BeautifulSoup
 
-APP_UA = "SnapshotCrawl/4.0.2 (public business contact discovery)"
+APP_UA = "SnapshotCrawl/4.4 (public business contact discovery)"
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
-# Public Overpass instances. They may throttle or temporarily become unavailable.
 OVERPASS_ENDPOINTS = (
-    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.nchc.org.tw/api/interpreter",
@@ -82,6 +81,31 @@ def _normalize_website(value):
     return parsed.geturl()
 
 
+GEOAPIFY_GEOCODE = "https://api.geoapify.com/v1/geocode/search"
+GEOAPIFY_PLACES = "https://api.geoapify.com/v2/places"
+
+def _settings_file():
+    folder = Path(os.environ.get("APPDATA") or Path.home()) / "Snapshot Crawl"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / "settings.json"
+
+def _load_geoapify_key():
+    try:
+        import json
+        return str(json.loads(_settings_file().read_text(encoding="utf-8")).get("geoapify_api_key", "")).strip()
+    except Exception:
+        return ""
+
+def _save_geoapify_key(value):
+    import json
+    path = _settings_file()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        data = {}
+    data["geoapify_api_key"] = value.strip()
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 class LeadFinder(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
@@ -112,13 +136,18 @@ class LeadFinder(tk.Toplevel):
         ttk.Label(form, text="City / area").grid(row=0, column=1, sticky="w")
         self.location = tk.StringVar(value="Abuja, Nigeria")
         ttk.Entry(form, textvariable=self.location).grid(row=1, column=1, sticky="ew", padx=(0, 12))
+        ttk.Label(form, text="Geoapify API key").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        self.geo_key = tk.StringVar(value=_load_geoapify_key())
+        ttk.Entry(form, textvariable=self.geo_key, show="•").grid(row=3, column=0, sticky="ew", padx=(0, 12))
+        ttk.Button(form, text="Save API key", command=self.save_api_key).grid(row=3, column=1, sticky="w")
+        ttk.Label(form, text="Saved locally on this computer").grid(row=3, column=2, sticky="w")
         ttk.Label(form, text="Maximum candidates").grid(row=0, column=2, sticky="w")
-        self.limit = tk.StringVar(value="250")
+        self.limit = tk.StringVar(value="100")
         ttk.Spinbox(form, from_=10, to=1000, increment=10, textvariable=self.limit, width=12).grid(row=1, column=2, sticky="w")
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)
 
-        self.visit_sites = tk.BooleanVar(value=True)
+        self.visit_sites = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             outer,
             text="Visit publicly accessible business websites to find additional published phone numbers and emails",
@@ -154,10 +183,18 @@ class LeadFinder(tk.Toplevel):
         self.tree.pack(fill="both", expand=True, pady=(4, 8))
         ttk.Label(
             outer,
-            text="Data source: OpenStreetMap community business listings and publicly accessible business websites. Coverage depends on what is listed publicly.",
+            text="Data sources: Geoapify Places (when configured), OpenStreetMap fallback, and publicly accessible business websites.",
             foreground="#606B7A",
             wraplength=1000,
         ).pack(anchor="w")
+
+    def save_api_key(self):
+        key = self.geo_key.get().strip()
+        if not key:
+            messagebox.showwarning("API key required", "Paste your Geoapify API key first.")
+            return
+        _save_geoapify_key(key)
+        messagebox.showinfo("API key saved", "Geoapify API key saved on this computer.")
 
     def start(self):
         niche = self.niche.get().strip()
@@ -171,6 +208,8 @@ class LeadFinder(tk.Toplevel):
             return
         if self.worker and self.worker.is_alive():
             return
+        if self.geo_key.get().strip():
+            _save_geoapify_key(self.geo_key.get().strip())
         self.stop_event.clear()
         self.rows = []
         for item in self.tree.get_children():
@@ -184,7 +223,7 @@ class LeadFinder(tk.Toplevel):
         self.counts.set("Found: 0  |  Checked: 0  |  Qualified: 0  |  Excluded: 0")
         self.worker = threading.Thread(
             target=self.worker_search,
-            args=(niche, place, limit, self.visit_sites.get()),
+            args=(niche, place, limit, self.visit_sites.get(), self.geo_key.get().strip()),
             daemon=True,
         )
         self.worker.start()
@@ -198,42 +237,106 @@ class LeadFinder(tk.Toplevel):
         self.events.put(event)
 
     def request(self, method, url, **kwargs):
+        """Bounded request helper: no multi-minute retry loops."""
         headers = {"User-Agent": APP_UA, "Accept": "application/json,text/html,*/*"}
         headers.update(kwargs.pop("headers", {}))
-        last_error = None
-        for attempt in range(3):
-            if self.stop_event.is_set():
-                raise RuntimeError("Search stopped by user.")
-            try:
-                response = requests.request(
-                    method, url, headers=headers, timeout=(10, 35),
-                    allow_redirects=True, **kwargs
-                )
-                if response.status_code in (429, 502, 503, 504):
-                    raise requests.HTTPError(f"Temporary service response: HTTP {response.status_code}", response=response)
-                response.raise_for_status()
-                return response
-            except Exception as exc:
-                last_error = exc
-                if attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(f"Request failed after 3 attempts: {last_error}")
+        if self.stop_event.is_set():
+            raise RuntimeError("Search stopped by user.")
+        response = requests.request(
+            method, url, headers=headers, timeout=(6, 12),
+            allow_redirects=True, **kwargs
+        )
+        if response.status_code in (429, 502, 503, 504):
+            raise requests.HTTPError(
+                f"Temporary service response: HTTP {response.status_code}",
+                response=response
+            )
+        response.raise_for_status()
+        return response
 
-    def geocode(self, place):
+    def geocode(self, place, api_key=""):
         self.post(("status", f"Finding the location: {place}"))
-        response = self.request("GET", "https://nominatim.openstreetmap.org/search",
-                                params={"q": place, "format": "jsonv2", "limit": 1})
-        data = response.json()
+        if api_key:
+            try:
+                response = requests.get(
+                    GEOAPIFY_GEOCODE,
+                    params={"text": place, "format": "json", "limit": 1, "apiKey": api_key},
+                    timeout=(6, 15), headers={"User-Agent": APP_UA}
+                )
+                response.raise_for_status()
+                results = response.json().get("results", [])
+                if results:
+                    item = results[0]
+                    return float(item["lat"]), float(item["lon"]), item.get("formatted", place)
+            except Exception as exc:
+                self.post(("status", f"Geoapify location lookup failed; trying OpenStreetMap: {exc}"))
+        try:
+            response = self.request("GET", NOMINATIM,
+                params={"q": place, "format": "jsonv2", "limit": 1})
+            data = response.json()
+        except Exception as exc:
+            raise RuntimeError("Could not find this location using Geoapify or OpenStreetMap. "
+                               "Check your API key and internet connection. Details: " + str(exc))
         if not data:
-            raise RuntimeError("The location could not be found. Try a larger city name or a nearby district.")
+            raise RuntimeError("The location could not be found. Try a larger city name or nearby district.")
         item = data[0]
         return float(item["lat"]), float(item["lon"]), item.get("display_name", place)
 
+    def geoapify_categories(self, niche):
+        text = niche.lower()
+        mapping = [
+            (("hair", "salon", "barber", "beauty", "spa"), "commercial.hairdresser,commercial.beauty"),
+            (("hotel", "guest house", "hostel", "motel"), "accommodation.hotel,accommodation.guest_house,accommodation.hostel"),
+            (("restaurant", "eatery", "food", "cafe", "catering"), "catering.restaurant,catering.cafe,catering.fast_food"),
+            (("pharmacy", "chemist"), "healthcare.pharmacy"),
+            (("hospital", "clinic", "doctor", "dentist"), "healthcare.hospital,healthcare.clinic,healthcare.doctor,healthcare.dentist"),
+            (("school", "college", "university"), "education.school,education.college,education.university"),
+            (("supermarket", "grocery", "market"), "commercial.supermarket,commercial.convenience"),
+            (("fashion", "boutique", "clothing", "cloth"), "commercial.clothing,commercial.fashion"),
+            (("mechanic", "car repair", "auto repair"), "service.vehicle.repair,service.vehicle"),
+            (("gym", "fitness"), "leisure.fitness_centre"),
+            (("bakery",), "commercial.food_and_drink"),
+        ]
+        for words, categories in mapping:
+            if any(word in text for word in words):
+                return categories
+        return "commercial,service"
+
+    def query_geoapify(self, lat, lon, niche, limit, api_key):
+        categories = self.geoapify_categories(niche)
+        self.post(("status", f"Searching Geoapify listings for {niche}…"))
+        response = requests.get(
+            GEOAPIFY_PLACES,
+            params={"categories": categories, "filter": f"circle:{lon},{lat},20000",
+                    "limit": min(max(int(limit), 1), 500), "apiKey": api_key},
+            timeout=(8, 25), headers={"User-Agent": APP_UA, "Accept": "application/json"}
+        )
+        response.raise_for_status()
+        features = response.json().get("features", [])
+        elements = []
+        for feature in features:
+            props = feature.get("properties", {}) or {}
+            contact = props.get("contact", {}) or {}
+            raw = (props.get("datasource", {}) or {}).get("raw", {}) or {}
+            categories_list = props.get("categories") or ["business"]
+            tags = {
+                "name": props.get("name") or raw.get("name") or "",
+                "phone": contact.get("phone") or raw.get("phone") or "",
+                "email": contact.get("email") or raw.get("email") or "",
+                "website": props.get("website") or contact.get("website") or raw.get("website") or "",
+                "shop": categories_list[0],
+                "addr:street": props.get("address_line1") or "",
+                "addr:suburb": props.get("district") or props.get("suburb") or "",
+                "addr:city": props.get("city") or "",
+            }
+            elements.append({"type": "geoapify", "id": props.get("place_id") or len(elements), "tags": tags})
+        return elements
+
     def query_overpass(self, lat, lon):
-        """Try independent Overpass mirrors and several compatible request formats."""
-        radius = 25000
+        """Try each public mirror once with bounded timeouts and POST encodings."""
+        radius = 20000
         query = (
-            f"[out:json][timeout:50];("
+            f"[out:json][timeout:25];("
             f"nwr(around:{radius},{lat},{lon})[name][shop];"
             f"nwr(around:{radius},{lat},{lon})[name][amenity];"
             f"nwr(around:{radius},{lat},{lon})[name][office];"
@@ -242,42 +345,34 @@ class LeadFinder(tk.Toplevel):
             f"nwr(around:{radius},{lat},{lon})[name][healthcare];"
             f");out center tags;"
         )
-        headers = {"User-Agent": APP_UA, "Accept": "application/json"}
         errors = []
-        for endpoint_index, endpoint in enumerate(OVERPASS_ENDPOINTS, 1):
+        headers = {"User-Agent": APP_UA, "Accept": "application/json"}
+        for index, endpoint in enumerate(OVERPASS_ENDPOINTS, 1):
             if self.stop_event.is_set():
                 return []
-            self.post(("status", f"Searching public business listings (source {endpoint_index}/{len(OVERPASS_ENDPOINTS)})…"))
-            attempts = (
-                ("POST", {"data": {"data": query}, "headers": headers}),
-                ("POST", {"data": query, "headers": {**headers, "Content-Type": "application/x-www-form-urlencoded"}}),
-                ("GET", {"params": {"data": query}, "headers": headers}),
-            )
-            for method, kwargs in attempts:
-                if self.stop_event.is_set():
-                    return []
-                try:
-                    response = requests.request(
-                        method, endpoint, timeout=(15, 90),
-                        allow_redirects=True, **kwargs
+            self.post(("status", f"Searching public business listings (source {index}/{len(OVERPASS_ENDPOINTS)})…"))
+            try:
+                response = requests.post(
+                    endpoint, data=query,
+                    headers={**headers, "Content-Type": "text/plain; charset=utf-8"},
+                    timeout=(6, 22), allow_redirects=True
+                )
+                if response.status_code == 406:
+                    response = requests.post(
+                        endpoint, data={"data": query}, headers=headers,
+                        timeout=(6, 22), allow_redirects=True
                     )
-                    response.raise_for_status()
-                    payload = response.json()
-                    if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
-                        raise RuntimeError("The listing service returned an invalid JSON response.")
-                    return payload["elements"]
-                except Exception as exc:
-                    code = getattr(getattr(exc, "response", None), "status_code", None)
-                    errors.append(f"{endpoint} [{method}{' HTTP '+str(code) if code else ''}]: {exc}")
-                    if code in (400, 401, 403, 404, 406, 410):
-                        break
-                    if self.stop_event.wait(1.0):
-                        return []
-        detail = " | ".join(errors[-10:])
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
+                    raise RuntimeError("The listing service returned an invalid response.")
+                return payload["elements"]
+            except Exception as exc:
+                errors.append(f"{endpoint}: {exc}")
         raise RuntimeError(
-            "All public OpenStreetMap search servers were unavailable or rejected "
-            "the request. This can be temporary. Check your internet connection "
-            "and try again in a few minutes. Details: " + detail
+            "Business search services did not respond successfully. "
+            "The search is stopped instead of loading indefinitely. "
+            "Please try again later or use a broader location. Details: " + " | ".join(errors)
         )
 
     def matches_niche(self, tags, niche):
@@ -318,7 +413,8 @@ class LeadFinder(tk.Toplevel):
             tags.get("addr:state"),
         ]
         address = ", ".join(x for x in address_parts if x)
-        source = f"https://www.openstreetmap.org/{element.get('type')}/{element.get('id')}"
+        source = ("https://www.geoapify.com/" if element.get("type") == "geoapify"
+                  else f"https://www.openstreetmap.org/{element.get('type')}/{element.get('id')}")
         return {
             "name": name,
             "category": category,
@@ -333,10 +429,13 @@ class LeadFinder(tk.Toplevel):
         base = _normalize_website(website)
         if not base:
             return "", ""
-        parsed = urlparse(base)
-        # Only fetch pages on the same host as the business website.
-        paths = ("", "/contact", "/contact-us", "/about", "/about-us")
-        urls = list(dict.fromkeys(urljoin(base.rstrip("/") + "/", p.lstrip("/")) for p in paths))
+        # Limit the number of pages. The previous implementation visited five
+        # pages with repeated long retries for every candidate, causing apparent
+        # endless loading on slow or unreachable sites.
+        urls = list(dict.fromkeys([
+            base,
+            urljoin(base.rstrip("/") + "/", "contact"),
+        ]))
         phones, emails = [], []
         for url in urls:
             if self.stop_event.is_set():
@@ -345,7 +444,7 @@ class LeadFinder(tk.Toplevel):
                 response = self.request("GET", url, headers={"Accept": "text/html"})
                 if "text/html" not in response.headers.get("Content-Type", "").lower():
                     continue
-                html = response.text[:1_500_000]
+                html = response.text[:700_000]
                 soup = BeautifulSoup(html, "html.parser")
                 for anchor in soup.select('a[href^="tel:"]'):
                     val = anchor.get("href", "")[4:].strip()
@@ -362,10 +461,9 @@ class LeadFinder(tk.Toplevel):
                         emails.append(val)
                 for val in PHONE_RE.findall(visible_text):
                     if _valid_phone(val):
-                        phones.append(re.sub(r"\s+", " ", val).strip())
-                time.sleep(0.6)
+                        phones.append(re.sub(r"\\s+", " ", val).strip())
             except Exception:
-                # One inaccessible contact page must not discard the whole business.
+                # A website timeout must never stall the entire lead search.
                 continue
         return "; ".join(dict.fromkeys(phones)), "; ".join(dict.fromkeys(emails))
 
@@ -386,11 +484,19 @@ class LeadFinder(tk.Toplevel):
                 if row.get("phone") or row.get("email"):
                     writer.writerow({key: row.get(key, "") for key in fields})
 
-    def worker_search(self, niche, place, limit, visit_sites):
+    def worker_search(self, niche, place, limit, visit_sites, api_key):
         try:
-            lat, lon, display = self.geocode(place)
+            lat, lon, display = self.geocode(place, api_key)
             self.post(("status", f"Location found: {display}. Searching business listings…"))
-            elements = self.query_overpass(lat, lon)
+            if api_key:
+                try:
+                    elements = self.query_geoapify(lat, lon, niche, limit, api_key)
+                    self.post(("status", f"Geoapify returned {len(elements)} listings."))
+                except Exception as geo_exc:
+                    self.post(("status", f"Geoapify search failed; trying OpenStreetMap: {geo_exc}"))
+                    elements = self.query_overpass(lat, lon)
+            else:
+                elements = self.query_overpass(lat, lon)
             if self.stop_event.is_set():
                 self.post(("finished", "Search stopped."))
                 return
@@ -422,11 +528,15 @@ class LeadFinder(tk.Toplevel):
             accepted = []
             checked = 0
             excluded = 0
+            websites_checked = 0
             for index, row in enumerate(candidates, 1):
                 if self.stop_event.is_set():
                     break
                 checked += 1
-                if visit_sites and row["website"] and (not row["phone"] or not row["email"]):
+                self.post(("status", f"Checking business {index} of {len(candidates)}: {row['name']}"))
+                if (visit_sites and websites_checked < 25 and row["website"]
+                        and (not row["phone"] or not row["email"])):
+                    websites_checked += 1
                     extra_phone, extra_email = self.scrape_website_contacts(row["website"])
                     row["phone"] = "; ".join(dict.fromkeys(x for x in (row["phone"], extra_phone) if x))
                     row["email"] = "; ".join(dict.fromkeys(x for x in (row["email"], extra_email) if x))
@@ -484,6 +594,9 @@ class LeadFinder(tk.Toplevel):
             pass
         if self.worker and self.worker.is_alive():
             self.after(150, self.poll)
+        elif str(self.search_btn["state"]) == "disabled":
+            # Safety net: always restore controls if a worker exits unexpectedly.
+            self.finish_ui()
 
     def finish_ui(self):
         self.progress.stop()
